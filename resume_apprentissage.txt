@@ -25,10 +25,59 @@ Résumé des apprentissages – Projet Bot-IAM
 
 1. RAG signifie Retrieval-Augmented Generation.
 
-2. C’est une technique d’IA qui combine : 
-    -La recherche d’informations dans une base de documents (retrieval)
-    -La génération de réponses à partir de ces informations (generation)
+2. C’est une technique d’IA qui combine :
+   - la recherche d’informations dans une base de documents (retrieval)
+   - la génération de réponses à partir de ces informations (generation)
 
 3. Ça permet d’avoir des réponses précises, basées sur des documents fiables,
-même si le modèle d’IA ne connaît pas la réponse à l’avance.
+   même si le modèle d’IA ne connaît pas la réponse à l’avance.
+
+
+## Lecture de données avec pandas
+
+1. pandas est une bibliothèque Python pour manipuler des tableaux et des données.
+2. pd.read_excel("fichier.xlsx") lit un fichier Excel dans un DataFrame.
+3. pd.read_csv("fichier.txt", sep="\t", encoding="utf-8") lit un fichier texte tabulé.
+4. DataFrame.iterrows() permet de parcourir chaque ligne du tableau.
+
+
+## Concept de chunk
+
+1. Un chunk est un morceau de texte ou d’information structuré.
+2. Ici, un chunk représente une application IAM avec :
+   - Application
+   - Domaine
+   - Groupe en charge de la demande
+   - Gestion de la demande (COFITIL ou JIRA)
+   - Commentaires
+3. Chaque chunk est stocké comme un dictionnaire Python.
+
+
+## Recherche simple dans les chunks
+
+1. On convertit la question et les champs en minuscules pour ne pas tenir compte
+   des majuscules/minuscules.
+2. On recherche le mot-clé dans plusieurs champs : application, commentaire,
+   groupe, gestion.
+3. On utilise une fonction qui retourne les chunks pertinents.
+4. On affiche les résultats trouvés avec les informations utiles.
+
+
+## Intégration d'une IA générative (Gemini)
+
+1. Gemini est un modèle de génération de texte par Google.
+2. Il faut installer la librairie google-generativeai et configurer la clé API.
+3. Le prompt contient :
+   - le contexte (les chunks pertinents)
+   - la question de l’utilisateur
+   - une consigne pour répondre clairement en utilisant les informations fournies.
+4. Le modèle génère une réponse basée sur les données trouvées.
+
+
+## Bonnes pratiques apprises
+
+1. Toujours protéger les données manquantes (NaN ou valeurs vides) avant de les utiliser.
+2. Utiliser des fonctions pour séparer la lecture des données, la recherche et la génération.
+3. Tester les morceaux de code avec des exemples simples avant d’ajouter l’IA.
+4. Vérifier les chemins de fichiers et les noms de colonnes avant de lancer le script.
 
