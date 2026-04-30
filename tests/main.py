@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 import google.genai as genai
 import certifi
 
-# Forcer Python à utiliser les certificats à jour de certifi
+# Cette ligne est une solution de contournement pour les problèmes de certificat SSL sur certaines machines,
+# en forçant l'utilisation des certificats de la bibliothèque 'certifi'.
 os.environ['SSL_CERT_FILE'] = certifi.where()
 
 # ===========================
@@ -28,13 +29,14 @@ try:
     client = genai.Client(api_key=api_key)
     print("Configuration de l'API Gemini réussie.")
 
-    # Test minimal pour vérifier que le modèle répond
+    # Nous effectuons un appel simple pour vérifier que la clé API est valide
+    # et que le modèle est accessible avant de continuer.
     test_response = client.models.generate_content(
         model="models/gemini-1.5-flash",
         contents="Test de connexion API"
     )
     if test_response and hasattr(test_response, "text"):
-        print("Modèle Gemini accessible et opérationnel.")
+        print("Le modèle Gemini est accessible et opérationnel.")
 
 except Exception as e:
     print(f"Erreur lors de la configuration de l'API Gemini : {e}")
