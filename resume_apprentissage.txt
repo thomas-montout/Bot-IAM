@@ -1,0 +1,34 @@
+Résumé des apprentissages – Projet Bot-IAM
+
+# Initialisation d'un projet Python
+
+1. Structure d’un projet Python :
+   - Création d’un dossier pour le code (ex : bot_iam)
+   - Ajout d’un fichier requirements.txt pour les dépendances
+   - Utilisation d’un fichier README.md et .gitignore
+
+2. Environnement virtuel :
+   - Création avec : python -m venv venv
+   - Activation sous Windows : .\venv\Scripts\Activate
+   - Permet d’isoler les paquets Python du projet
+
+3. Installation de paquets :
+   - Exemple : pip install requests
+   - Ajout automatique dans l’environnement virtuel
+
+4. Gestion des dépendances :
+   - pip freeze > requirements.txt pour enregistrer la liste des paquets installés
+   - Permet de recréer l’environnement facilement avec pip install -r requirements.txt
+
+
+## Retrieval-Augmented Generation
+
+1. RAG signifie Retrieval-Augmented Generation.
+
+2. C’est une technique d’IA qui combine : 
+    -La recherche d’informations dans une base de documents (retrieval)
+    -La génération de réponses à partir de ces informations (generation)
+
+3. Ça permet d’avoir des réponses précises, basées sur des documents fiables,
+même si le modèle d’IA ne connaît pas la réponse à l’avance.
+
