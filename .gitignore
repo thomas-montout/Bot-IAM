@@ -1,0 +1,9 @@
+# Dossier de l'environnement virtuel
+venv/
+
+# Fichier d'environnement avec les clés secrètes
+.env
+
+# Cache Python
+__pycache__/
+*.pyc
