@@ -1,5 +1,6 @@
 # Dossier de l'environnement virtuel
 venv/
+.venv/
 
 # Fichier d'environnement avec les clés secrètes
 .env
@@ -7,3 +8,6 @@ venv/
 # Cache Python
 __pycache__/
 *.pyc
+
+# Cache des embeddings vectoriels (régénéré au premier démarrage)
+data/*.npz

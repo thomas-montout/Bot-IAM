@@ -1,83 +1,319 @@
 Résumé des apprentissages – Projet Bot-IAM
 
+============================================================
 # Initialisation d'un projet Python
+============================================================
 
-1. Structure d’un projet Python :
-   - Création d’un dossier pour le code (ex : bot_iam)
-   - Ajout d’un fichier requirements.txt pour les dépendances
-   - Utilisation d’un fichier README.md et .gitignore
+1. Structure d'un projet Python :
+   - Création d'un dossier pour le code (ex : src/)
+   - Ajout d'un fichier requirements.txt pour les dépendances
+   - Utilisation d'un fichier README.md et .gitignore
 
 2. Environnement virtuel :
-   - Création avec : python -m venv venv
-   - Activation sous Windows : .\venv\Scripts\Activate
-   - Permet d’isoler les paquets Python du projet
+   - Création avec : python -m venv .venv
+   - Activation sous Windows (PowerShell) : .\.venv\Scripts\Activate.ps1
+   - Activation sous macOS/Linux : source .venv/bin/activate
+   - Permet d'isoler les paquets Python du projet (chaque projet a SES versions)
+   - Sans venv, pip installe dans le user-site qui peut entrer en conflit avec d'autres projets
 
 3. Installation de paquets :
    - Exemple : pip install requests
-   - Ajout automatique dans l’environnement virtuel
+   - À faire APRÈS avoir activé le venv pour que l'install soit isolée
 
 4. Gestion des dépendances :
-   - pip freeze > requirements.txt pour enregistrer la liste des paquets installés
-   - Permet de recréer l’environnement facilement avec pip install -r requirements.txt
+   - pip freeze > requirements.txt pour enregistrer toutes les versions
+   - pip install -r requirements.txt pour recréer l'environnement
+   - Bonnes pratiques : épingler les versions importantes (ex: google-genai>=1.0.0)
+
+5. Pièges Windows rencontrés :
+   - Un fichier requirements.txt sauvegardé en UTF-16 BOM est illisible par pip
+     ("Invalid requirement: 'p\x00a\x00n\x00d\x00a\x00s\x00'")
+   - Solution : forcer l'écriture en UTF-8 sans BOM
+   - PowerShell par défaut peut écrire en UTF-16. Utiliser [System.IO.File]::WriteAllText
+     avec UTF8Encoding($false) si besoin.
 
 
-## Retrieval-Augmented Generation
+============================================================
+# Retrieval-Augmented Generation (RAG) — EN DÉTAIL
+============================================================
 
-1. RAG signifie Retrieval-Augmented Generation.
+## 1. Le problème que RAG résout
 
-2. C’est une technique d’IA qui combine :
-   - la recherche d’informations dans une base de documents (retrieval)
-   - la génération de réponses à partir de ces informations (generation)
+Un LLM (Gemini, GPT, etc.) a trois grosses limites :
+  a. Knowledge cutoff : il ne connaît que ce qui était public à sa date de training.
+  b. Hallucinations : il peut inventer des faits crédibles mais faux.
+  c. Pas de contexte métier : il ne connaît pas TES données privées
+     (ex : matrice IAM interne d'une entreprise).
 
-3. Ça permet d’avoir des réponses précises, basées sur des documents fiables,
-   même si le modèle d’IA ne connaît pas la réponse à l’avance.
+La RAG (Retrieval-Augmented Generation) résout ces 3 problèmes en injectant
+les bonnes informations directement dans le prompt AU MOMENT de la génération.
+
+Idée centrale : "Au lieu d'entraîner le modèle sur mes données (coûteux, lent),
+                 je lui DONNE les bonnes données dans le contexte de la question."
 
 
-## Lecture de données avec pandas
+## 2. Les 3 lettres de R-A-G
 
-1. pandas est une bibliothèque Python pour manipuler des tableaux et des données.
+  R = Retrieval (Recherche)
+      → Trouver, dans une base de documents, les passages pertinents pour la question.
+
+  A = Augmented (Augmentation)
+      → Construire un nouveau prompt qui combine la question + les passages trouvés.
+
+  G = Generation (Génération)
+      → Le LLM génère la réponse en lisant le prompt augmenté.
+
+
+## 3. Les deux approches du Retrieval
+
+### Approche 1 : Recherche par mots-clés (ex : str.contains, BM25)
+   - On cherche les mots exacts de la question dans les documents.
+   - ✅ Simple, rapide, pas d'API à appeler.
+   - ❌ Échoue dès que la question est reformulée.
+     Exemple : la question "Comment obtenir Photoshop ?" ne matchera PAS
+     une ligne qui dit "Demande logiciel Adobe Suite" — pourtant c'est la bonne.
+   - C'est ce qu'on avait dans la PREMIÈRE version du projet, et c'est pour ça
+     qu'on a basculé vers la version vectorielle.
+
+### Approche 2 : Recherche vectorielle (embeddings) — LA VRAIE RAG
+   - On transforme chaque document ET la question en VECTEURS qui capturent le SENS.
+   - On compare la similarité entre vecteurs (similarité cosinus).
+   - ✅ Capture le sens, pas juste les mots.
+     "Photoshop" et "logiciel Adobe" sont sémantiquement proches dans l'espace vectoriel.
+
+
+## 4. Embeddings : le cœur de la RAG vectorielle
+
+### Qu'est-ce qu'un embedding ?
+Un embedding est un VECTEUR (liste de nombres) qui représente le SENS d'un texte.
+
+Exemple avec gemini-embedding-001 (sortie de dimension 3072) :
+  "Adobe Illustrator"        → [0.123, -0.456, 0.789, ...]  (3072 nombres)
+  "Demande logiciel Adobe"   → [0.115, -0.461, 0.792, ...]  (proche du premier)
+  "Comment cuisiner ?"       → [-0.876, 0.234, ...]          (très différent)
+
+→ Deux textes de sens proche = vecteurs proches dans l'espace 3072-dim.
+
+### Comment mesurer la proximité ? La similarité cosinus
+On regarde l'ANGLE entre les deux vecteurs (pas leur longueur).
+
+  cos(0°)   = 1   → textes identiques de sens
+  cos(90°)  = 0   → textes sans rapport
+  cos(180°) = -1  → textes opposés
+
+Formule mathématique :
+       cos(A, B) = (A · B) / (||A|| × ||B||)
+
+En numpy : si les vecteurs sont d'abord normalisés (norme = 1), c'est juste
+le produit scalaire :
+       q_norm = q / np.linalg.norm(q)
+       d_norm = d / np.linalg.norm(d, axis=1, keepdims=True)
+       sims = d_norm @ q_norm   # ← un score de similarité par document
+
+### Task types : RETRIEVAL_DOCUMENT vs RETRIEVAL_QUERY
+Google distingue deux types d'embeddings, optimisés pour matcher entre eux :
+   - RETRIEVAL_DOCUMENT  → pour les documents qu'on stocke dans la base.
+   - RETRIEVAL_QUERY     → pour les questions des utilisateurs.
+
+Utiliser les deux types DIFFÉRENTS améliore significativement la qualité du retrieval.
+Si on utilise le même type pour les deux, ça marche mais c'est moins bon.
+
+### Pourquoi mettre en cache les embeddings ?
+Calculer des embeddings est :
+   - Lent : ~1 seconde par batch + appel réseau.
+   - Coûteux : chaque ligne consomme du quota API.
+   - Inutile à répéter si les données ne changent pas.
+
+Stratégie de cache utilisée dans le projet :
+   - Au premier démarrage : on calcule tous les embeddings, on les sauvegarde
+     dans un fichier numpy (.npz) à côté du .xlsx.
+   - Aux démarrages suivants : on lit le .npz directement → instantané.
+   - Cache invalidé si le mtime du .xlsx change (le fichier a été modifié)
+     ou si le nombre de lignes ne correspond plus.
+
+Code Python correspondant :
+       data_mtime = DATA_FILE_PATH.stat().st_mtime
+       if CACHE_FILE_PATH.exists():
+           cached = np.load(CACHE_FILE_PATH)
+           if float(cached['mtime'][0]) == data_mtime and len(cached['embeddings']) == len(df):
+               embeddings = cached['embeddings']  # réutiliser le cache
+
+### Pourquoi un seuil de similarité ?
+Sans seuil, le top-k retournera TOUJOURS k lignes, même si elles n'ont rien à voir.
+Avec min_similarity=0.4, on FILTRE les résultats faibles. Effet :
+   - Si la question est dans le sujet → on renvoie k lignes pertinentes → bonne réponse.
+   - Si la question est hors-sujet → on renvoie 0 ligne → le modèle dit
+     "Je n'ai pas trouvé l'information" au lieu d'halluciner.
+
+
+## 5. Architecture finale dans src/api.py
+
+AU DÉMARRAGE :
+   1. Charger le .env (clé API Gemini).
+   2. Créer le client genai.Client(api_key=...).
+   3. Lire data/matriceiam.xlsx avec pandas.
+   4. Pour chaque ligne, créer un texte "searchable" :
+      concaténation de toutes les colonnes en string (en gérant les NaN).
+   5. Si le cache .npz existe et est valide → charger les embeddings.
+      Sinon → embed les 182 lignes avec RETRIEVAL_DOCUMENT, par batches de 50,
+      avec une pause de 65s entre batches (rate limit), puis sauvegarder.
+
+À CHAQUE QUESTION (POST /api/ask) :
+   1. R — embed la question avec RETRIEVAL_QUERY  → vecteur (3072,).
+   2. R — calcul de la similarité cosinus avec la matrice des embeddings
+          → un score pour chacune des 182 lignes.
+   3. R — argsort et garder le top-5 dont le score est ≥ 0.4.
+   4. A — insérer ces lignes (en CSV) dans un prompt avec la question
+          et une consigne stricte ("réponds UNIQUEMENT depuis le contexte").
+   5. G — envoyer à gemini-2.5-flash-lite, retourner response.text.
+
+
+## 6. Pièges rencontrés sur ce projet
+
+   a. Deux packages Gemini différents !
+      - google-generativeai (ancien SDK, déprécié)
+            → import : google.generativeai
+            → API    : model = genai.GenerativeModel("..."); model.generate_content(...)
+      - google-genai (nouveau SDK, recommandé)
+            → import : google.genai
+            → API    : client = genai.Client(api_key=...);
+                       client.models.generate_content(model="...", contents="...")
+      Ne pas confondre. Le code utilise google-genai.
+
+   b. openpyxl manquant.
+      pandas a besoin de openpyxl pour lire les .xlsx. Ne l'inclut PAS automatiquement.
+      Symptôme : "ImportError: Missing optional dependency 'openpyxl'".
+
+   c. NaN dans les cellules + pandas 3.x.
+      `row.astype(str)` ne convertit PAS les NaN floats en strings en pandas 3.x.
+      Symptôme : "TypeError: sequence item 0: expected str instance, float found"
+      lors d'un ' '.join(...).
+      Solution : ' '.join(str(v) for v in row.values) — conversion explicite.
+
+   d. Quotas free-tier Gemini.
+      - 100 requêtes/min pour les embeddings ; CHAQUE item dans `contents=[...]`
+        compte comme une requête séparée.
+      - 20 req/jour pour gemini-2.5-flash (très restrictif !).
+      - 1000 req/jour pour gemini-2.5-flash-lite (mieux).
+      Solutions appliquées :
+        * Batching avec pause de 65s entre batches.
+        * Retry-with-backoff sur 429, en lisant le retryDelay renvoyé par l'API.
+        * Cache disque des embeddings → on ne paie qu'une fois.
+        * Suppression de l'appel "generate_content('test')" au démarrage
+          qui consommait inutilement le quota.
+        * Choix du modèle flash-lite plutôt que flash.
+
+   e. Encodage UTF-16 BOM sur Windows.
+      L'éditeur peut sauver requirements.txt en UTF-16. pip ne le comprend pas.
+      Forcer UTF-8 sans BOM.
+
+
+## 7. Différences clé entre l'ancien et le nouveau retrieval
+
+| Critère                  | Ancien (mot-clé)              | Nouveau (vectoriel)              |
+|--------------------------|-------------------------------|----------------------------------|
+| Méthode                  | str.contains(query, ...)      | similarité cosinus sur embeddings|
+| Comprend les synonymes ? | Non                           | Oui                              |
+| Comprend les reformulations ? | Non                      | Oui                              |
+| Vitesse                  | Très rapide                   | Rapide (matmul numpy)            |
+| Coût                     | Gratuit                       | 1 embed call par question + cache|
+| Qualité                  | Faible sur questions naturelles | Élevée                         |
+| Échec typique            | "Comment demander X ?"        | Très bonne récupération           |
+
+
+============================================================
+# Lecture de données avec pandas
+============================================================
+
+1. pandas est une bibliothèque Python pour manipuler des tableaux.
 2. pd.read_excel("fichier.xlsx") lit un fichier Excel dans un DataFrame.
+   → Nécessite openpyxl en plus de pandas.
 3. pd.read_csv("fichier.txt", sep="\t", encoding="utf-8") lit un fichier texte tabulé.
-4. DataFrame.iterrows() permet de parcourir chaque ligne du tableau.
+4. df.apply(fn, axis=1) applique une fonction sur chaque ligne.
+5. df.iloc[indices] sélectionne des lignes par indice numérique.
+6. df.to_csv(index=False) sérialise en CSV (utile pour l'envoyer dans un prompt LLM).
 
 
-## Concept de chunk
+============================================================
+# Concept de chunk (rappel)
+============================================================
 
-1. Un chunk est un morceau de texte ou d’information structuré.
-2. Ici, un chunk représente une application IAM avec :
-   - Application
-   - Domaine
-   - Groupe en charge de la demande
-   - Gestion de la demande (COFITIL ou JIRA)
-   - Commentaires
-3. Chaque chunk est stocké comme un dictionnaire Python.
-
-
-## Recherche simple dans les chunks
-
-1. On convertit la question et les champs en minuscules pour ne pas tenir compte
-   des majuscules/minuscules.
-2. On recherche le mot-clé dans plusieurs champs : application, commentaire,
-   groupe, gestion.
-3. On utilise une fonction qui retourne les chunks pertinents.
-4. On affiche les résultats trouvés avec les informations utiles.
+1. Un chunk = un morceau de texte ou d'information structuré.
+2. Ici, chaque ligne du .xlsx = un chunk (une application IAM).
+3. Champs : Application, Domain, Groupe en charge, Formulaire, Gestion, Template, Commentaires.
+4. Pour la RAG vectorielle, on concatène tous les champs en UN texte par chunk
+   avant de l'embedder.
 
 
-## Intégration d'une IA générative (Gemini)
+============================================================
+# Intégration de Gemini (nouveau SDK : google-genai)
+============================================================
 
-1. Gemini est un modèle de génération de texte par Google.
-2. Il faut installer la librairie google-generativeai et configurer la clé API.
-3. Le prompt contient :
-   - le contexte (les chunks pertinents)
-   - la question de l’utilisateur
-   - une consigne pour répondre clairement en utilisant les informations fournies.
-4. Le modèle génère une réponse basée sur les données trouvées.
+1. pip install google-genai (PAS google-generativeai !).
+
+2. Configurer le client :
+       from dotenv import load_dotenv
+       import google.genai as genai
+       load_dotenv()
+       client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+3. Génération de texte :
+       response = client.models.generate_content(
+           model="gemini-2.5-flash-lite",
+           contents=prompt,
+       )
+       print(response.text)
+
+4. Génération d'embeddings :
+       from google.genai import types
+       result = client.models.embed_content(
+           model="gemini-embedding-001",
+           contents=["texte 1", "texte 2"],
+           config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+       )
+       vectors = [e.values for e in result.embeddings]
+
+5. Construction du prompt RAG (template) :
+       prompt = f"""Contexte:
+       {relevant_context}
+       ---
+       Question: {question}
+       ---
+       En te basant UNIQUEMENT sur le contexte ci-dessus, réponds à la question.
+       Si le contexte ne contient pas la réponse, dis "Je n'ai pas trouvé l'information dans mes documents"."""
 
 
-## Bonnes pratiques apprises
+============================================================
+# FastAPI (rappel)
+============================================================
+
+1. FastAPI = framework web Python asynchrone.
+2. Définir une app : app = FastAPI()
+3. Définir un endpoint POST avec un schéma Pydantic :
+       class Question(BaseModel):
+           query: str
+       @app.post("/api/ask")
+       async def ask_bot(question: Question):
+           ...
+4. Lancer avec uvicorn : uvicorn src.api:app --reload
+5. Documentation Swagger auto-générée sur /docs.
+6. CORS à activer pour autoriser le frontend Next.js (http://localhost:3000) :
+       app.add_middleware(CORSMiddleware, allow_origins=[...], allow_methods=["*"], ...)
+
+
+============================================================
+# Bonnes pratiques apprises
+============================================================
 
 1. Toujours protéger les données manquantes (NaN ou valeurs vides) avant de les utiliser.
 2. Utiliser des fonctions pour séparer la lecture des données, la recherche et la génération.
-3. Tester les morceaux de code avec des exemples simples avant d’ajouter l’IA.
+3. Tester les morceaux de code avec des exemples simples avant d'ajouter l'IA.
 4. Vérifier les chemins de fichiers et les noms de colonnes avant de lancer le script.
-
+5. Toujours utiliser un environnement virtuel (.venv) pour isoler les dépendances.
+6. Sur les API payantes/quotées, mettre en cache TOUT ce qui peut être calculé une fois pour toutes.
+7. Sur les rate-limits, implémenter un retry-with-backoff qui RESPECTE le retryDelay renvoyé par l'API.
+8. Pour le RAG, distinguer task_type RETRIEVAL_DOCUMENT et RETRIEVAL_QUERY → meilleur retrieval.
+9. Ajouter un SEUIL de similarité minimum pour ne pas forcer le LLM à inventer des réponses
+   sur des questions hors-sujet.
+10. Ne PAS faire d'appel "test" gratuit-mais-quotaé au démarrage : ça consomme la quota
+    pour rien.
